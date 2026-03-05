@@ -212,7 +212,7 @@ function convertLinesToArray(txt) {
   const result = [];
   for (let i=0;i<lines.length;i++) {
     const line = lines[i];
-    const m = line.match(/^([^#][^\s]+)/u);  // Extract a word at the beginning - up to a space or hash
+    const m = line.match(/^([^\s]?[^#\s]+)/u);  // Extract a word at the beginning - up to a space or hash
     if (m && m[1]) {
       result.push(m[1]);
     }
@@ -490,6 +490,6 @@ patchEventClick(doDownload, [btnDownload]);
 </script>
 
 <br/>
-<p>2026-03-05 10:50</p>
+<p>2026-03-05 14:50</p>
 </body>
 </html>
