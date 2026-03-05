@@ -9,6 +9,10 @@ Load up:
 
 And the tool will compare each word, producing a list of differences.
 
+# Live Page
+
+https://mattmatic.github.io/will-it-buzz/
+
 # How it works
 
 - The font is dynamically loaded into the css space
