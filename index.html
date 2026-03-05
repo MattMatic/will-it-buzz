@@ -1,0 +1,495 @@
+<html>
+<head>
+<style>
+:root {
+  --base-color: #aacccc;
+}
+body {
+  font-family: "Calibri";
+  background-color: var(--base-color);
+}
+.test_font {
+  font-family: "TestFont";
+  font-kerning: normal;
+  font-size: 200%;
+  color: #000080;
+  text-align: center;
+}
+.prIndex {
+  display: inline-block;
+  min-width: 65px;
+}
+#pnlPreview {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: #c0f0c0;
+  border: 2px solid #262;
+  padding: 10px;
+  display: none;
+}
+
+</style>
+</head>
+
+
+<body>
+<h1>"Will It 'Buzz?"</h1>
+<h2>Compare Browser Complex Shaping vs HarfBuzz <span id='harfBuzzVersion'></span>.</h2>
+
+<div id='divLOAD'>
+<table border=1 width='100%' id='ddFiles'>
+  <tr>
+    <td width='15%'>1. Word List</td>
+    <td width='20%' id='ddWordListFile'>
+      Drag Word List .TXT file
+    </td>
+    <td width='20%'>
+      <span id='ddWordListFileName'></span>
+    </td>
+    <td width='20%'>
+      <span id='ddWordListFileResult'></span>
+    </td>
+    <td rowspan=4>
+      <p>This tool compares the browser's rendering of the font against HarfBuzz.</p>
+      <p>Load a word-list and a font, and let the tool shape verify.</p>
+      <p>Note that the HarfBuzz check does <b>not</b> perform BiDi operations, but the
+      browser will - this will produce 'false-positives'.</p>
+      <p>Hover the mouse over the failure words to show a render.</p>
+    </td>
+  </tr>
+  <tr>
+    <td>2. Font</td>
+    <td id='ddFontFile'>
+      Drag Font .TTF file
+    </td>
+    <td><span id='ddFontFileName'></span></td>
+    <td><span id='ddFontFileResult'></span></td>
+  </tr>
+  <tr>
+    <td>3. Process</td>
+    <td colspan=3>
+      <button id='btnProcessWords' disabled>Process</button>
+      <!--<button id='btnTest'>Test</button>-->
+    </td>
+  </tr>
+</table>
+<em>To load files: Drag and drop; right-mouse-click. On phone/tablet, double tap to load.</em>
+
+</div>
+<div id='divMAIN' hidden>
+<h2>Results</h2>
+Failed: <span id='spanFailCount'></span> <br/>
+Ok: <span id='spanOkCount'></span> <br/>
+Total:  <span id='spanTotalCount'></span> <br/>
+
+<table border=0 id='tableCurrent'>
+  <tr><td>Current</td><td><img id='pngInterim' width='450px' height='150px'></img></td></tr>
+</table>
+
+<h2>Failures</h2>
+<button id='btnDownload' disabled>Download List</button>
+  <div id='divFail'>
+  </div>
+</div>
+
+<div hidden id='divWORK'>
+  <h2>Canvas:</h2>
+  <canvas id='canvasOutputDOM' width='600px' height='200px'></canvas>
+</div>
+
+<div id='pnlPreview'>
+  <img id='pngPreview' width='600px' height='200px'></img>
+</div>
+
+<script type="text/javascript" src="./js/hbjs-12.3.0/hb.js"></script> <!-- Module - REQUIRED -->
+<script type="text/javascript" src="./js/hbjs.js"></script> <!-- Wrapper, can be used without -->
+
+<script type="text/javascript" src="./progresspanel.js"></script>
+<script type="text/javascript" src="./doubletap.js"></script>
+
+<script type='module' async defer>
+'use strict';
+
+import { HarfBuzzShaping } from './js/hbshaping.mjs';
+const hbs = new HarfBuzzShaping;
+
+const promises = [
+  createHarfBuzz()
+  ];
+
+Promise.all(promises).then(([aModuleHarfBuzz]) => {
+  window.hb = hbjs(aModuleHarfBuzz);
+  hbs.setHarfBuzz(window.hb);
+  harfBuzzVersion.innerText = hb.version_string();
+  onResourcesLoaded();
+});
+window.hbs = hbs;
+
+async function onResourcesLoaded() {
+  console.log('onResourcesLoaded');
+}
+
+
+</script>
+
+<script>
+function patchEvent(func, event, arr) {
+  arr.forEach(e=>e.addEventListener(event, func));
+}
+function patchEventInput(func, arr) {
+  patchEvent(func, 'input', arr);
+}
+function patchEventClick(func, arr) {
+  patchEvent(func, 'click', arr);
+}
+
+//------------------------------
+// Drag and drop utilities
+//------------------------------
+
+function chooseFile(func, options={}) {
+  const { multiple=false } = options;
+  let filein = document.createElement('input');
+  filein.type = 'file';
+  filein.multiple = multiple;
+  filein.onchange = e => {
+    let file = e.target.files[0];
+    func(file, e, e.target.files);
+  }
+  filein.click();
+  try {
+    document.body.removeChild(filein);
+  } catch (e) {
+    // ignore
+  }
+}
+
+function cancel(e) {e.stopPropagation();e.preventDefault();}
+function patchDragDrop(ele, foo, mulitple) {
+  //const ele = document.getElementById(id);
+  ele.addEventListener('dragover', (e) => {
+    cancel(e);
+    ele.style.backgroundColor = 'yellow';
+    }, false);
+  ele.addEventListener('dragleave', (e) => {
+    cancel(e);
+    ele.style.backgroundColor = null;
+    }, false);
+  ele.addEventListener('drop', (e) => {
+    cancel(e);
+    const file = e.dataTransfer.files[0];
+    ele.style.backgroundColor = null;
+    foo(file, ele, e.dataTransfer.files);
+  });
+  ele.addEventListener('mousedown', (e) => {
+    if (e.button === 2) {
+      chooseFile(foo, {multiple:multiple,});
+    }
+  });
+}
+document.addEventListener('dragover', cancel, false);
+document.addEventListener('dragleave', cancel, false);
+document.addEventListener('drop', cancel, false);
+
+//---------------------------------------
+let wordListFile;
+let fontFile;
+let wordsArray;
+let wordsFail = [];
+let wordsOk = [];
+let tolerance = 0;
+
+function decideButtonProcessEnable() {
+  if (!wordListFile?.loaded) return;
+  if (!fontFile?.loaded) return;
+  btnProcessWords.disabled = false;
+}
+
+
+function convertLinesToArray(txt) {
+  const lines = txt.split(/\r?\n+/g);
+  const result = [];
+  for (let i=0;i<lines.length;i++) {
+    const line = lines[i];
+    const m = line.match(/^([^#][^\s]+)/u);  // Extract a word at the beginning - up to a space or hash
+    if (m && m[1]) {
+      result.push(m[1]);
+    }
+  }
+  return result;
+}
+
+async function handleDropTXT(fileObject) {
+  const file = fileObject.file;
+  const filename = fileObject.filename;
+  const wordListText = await file.text();
+  wordsArray = convertLinesToArray(wordListText);
+  ddWordListFileName.innerText = filename;
+  ddWordListFileResult.innerHTML = `${wordsArray.length} words`;
+  fileObject.loaded = (wordsArray.length > 0);
+  decideButtonProcessEnable();
+}
+
+function deleteFontByName(name) {
+  document.fonts.forEach(
+    (v) => {
+      if (v.family == name) {
+        document.fonts.delete(v);
+      }
+    }
+  );
+}
+
+async function applyFont(fontname, data) {
+  const fontFace = new FontFace(fontname, data);
+  fontFace.load().then( () => {
+    deleteFontByName(fontname);
+    document.fonts.add(fontFace);
+  }, (err)=> {console.error(err); });
+}
+
+async function handleDropTTF(fileObject) {
+  const file = fileObject.file;
+  const filename = fileObject.filename;
+  const buff = await file.arrayBuffer();
+  hbs.setFontBlob(buff);
+  applyFont('TestFont', buff)
+  ddFontFileName.innerText = filename;
+  ddFontFileResult.innerHTML = `${hbs.getFontFullName()}<br/>${hbs.getFontVersion()}`;
+  fileObject.loaded = hbs.getFontFullName();
+  decideButtonProcessEnable();
+}
+
+async function handleDropFiles(file, event, files) {
+  for (let i=0; i<files.length; i++) {
+    file = files[i];
+    const filename = file.name.toLowerCase();
+    if (filename.endsWith('.txt')) wordListFile = {file:file, filename:filename};
+    else
+    if (filename.endsWith('.ttf')) fontFile = {file:file, filename:filename};
+    else
+      window.alert(`File extension "${filename}" not known`);
+  }
+  if (wordListFile)  await handleDropTXT(wordListFile);
+  if (fontFile)      await handleDropTTF(fontFile);
+}
+
+//----------------BITMAP HANDLING
+
+function computeHistogram(imageData, alphaMin=0) {
+  const { data } = imageData;
+  const histR = new Array(256).fill(0);
+  const histG = new Array(256).fill(0);
+  const histB = new Array(256).fill(0);
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i+0];
+    const g = data[i+1];
+    const b = data[i+2];
+    const a = data[i+3];
+    if (a >= alphaMin) {
+      histR[data[i + 0]]++;
+      histG[data[i + 1]]++;
+      histB[data[i + 2]]++;
+    }
+  }
+
+  return { histR, histG, histB };
+}
+
+function computeThreshold(rgb, threshold) {
+  const res = {r:0, g:0, b:0, t:0 };
+  for (let i=threshold; i<256; i++) {
+    const r = rgb.histR[i];
+    const g = rgb.histG[i];
+    const b = rgb.histB[i];
+    res.t += r + g + b;
+    res.r += r;
+    res.g += g;
+    res.b += b;
+  }
+  return res;
+}
+
+function preparePreview(word) {
+  const canvas = canvasOutputDOM;
+  const width  = canvas.width;
+  const height = canvas.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true, desynchronized: false });
+  const imageData = renderWordToImageData(ctx, word, width, height, true);
+}
+
+function updateInterim(word) {
+  preparePreview(word)
+  pngInterim.src = canvasOutputDOM.toDataURL('image/png');
+}
+
+function updateTotals() {
+  spanFailCount.innerText = wordsFail.length;
+  spanOkCount.innerHTML = wordsOk.length;
+  spanTotalCount.innerText = wordsArray.length;
+}
+
+function showPreview(index) {
+  const word = wordsFail[index];
+  pnlPreview.hidden = false;
+  pnlPreview.style.display = 'block';
+  preparePreview(word);
+  pngPreview.src = canvasOutputDOM.toDataURL('image/png');
+}
+
+function hidePreview() {
+  pnlPreview.hidden = true;
+  pnlPreview.style.display = 'none';
+}
+
+function failWord(index, word) {
+  wordsFail.push(word);
+  if (wordsFail.length < 500) {
+    let html = divFail.innerHTML;
+    html += `<span onmouseover='showPreview(${wordsFail.length-1});' onmouseout='hidePreview();'>`
+    html += `<span class='prIndex'>${index+1}</span>\t${word}<br/>\r\n`;
+    html += `</span>`;
+    divFail.innerHTML = html;
+  }
+}
+
+function jsonToCanvas(ctx, json, ox, oy, dx, dy, scale=1) {
+  function tX(v) { return ox + (dx+v)*scale; }
+  function tY(v) { return oy - (dy+v)*scale; }
+  for (let i=0; i<json.length; i++) {
+    const j = json[i];
+    const v = j.values;
+    switch (j.type) {
+      case 'M' : ctx.moveTo(tX(v[0]), tY(v[1])); break;
+      case 'L' : ctx.lineTo(tX(v[0]), tY(v[1])); break;
+      case 'C' : ctx.bezierCurveTo(tX(v[0]), tY(v[1]), tX(v[2]), tY(v[3]), tX(v[4]), tY(v[5])); break;
+      case 'Q' : ctx.quadraticCurveTo(tX(v[0]), tY(v[1]), tX(v[2]), tY(v[3])); break;
+      case 'Z' : /* NOTE: fill at the end! */ break;
+      default : {
+        console.error('UNKNOWN j.type', j); //~~~~
+      }
+    }
+  }
+  ctx.fill();
+}
+
+function glyphToCanvas(ctx, r, x, y, scale=1) {
+  const json = hbs._getGlyphData(r.g).jsonAbsolute;
+  jsonToCanvas(ctx, json, x, y, r.dx, r.dy, scale);
+  return {
+    x: x + (r.ax * scale),
+    y: y + (r.ay * scale),
+  }
+}
+
+function shapeAndRenderToCanvas(ctx, word, width, height, display) {
+  let x = 100;
+  let y = height * 3 / 4;
+
+  ctx.fillStyle = '#f00';
+  ctx.font = '50px TestFont';
+  ctx.fillText(word, x, y);  
+  if (!display) {
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.strokeText(word, x, y);
+  }
+
+  ctx.beginPath();
+  const hbr = hbs.shape(word);
+  ctx.fillStyle = '#00f';
+  for (let i=0; i<hbr.length; i++) {
+    const r = hbr[i];
+    const xy = glyphToCanvas(ctx, r, x, y, 0.05);
+    x = xy.x;
+    y = xy.y;
+  }
+}
+
+function renderWordToImageData(ctx, word, width, height, display) {
+  ctx.clearRect(0, 0, width, height);
+  shapeAndRenderToCanvas(ctx, word, width, height, display);
+}
+
+async function processWord(ctx, index, word, width, height) {
+  renderWordToImageData(ctx, word, width, height);
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const hist   = computeHistogram(imageData, 255);
+  const thresh = computeThreshold(hist, 250);
+
+  // CHECK: not sure of the threshold. Some Red does seep through...
+  if (thresh.r > tolerance) {
+    failWord(index, word);
+  } else {
+    wordsOk.push(word);
+  }
+}
+
+async function processWordsInitial() {
+  progressPanel.setInterval(50);
+  btnProcessWords.disabled = true;
+  divMAIN.hidden = false;
+  pngInterim.hidden = false;
+  let max = wordsArray.length;
+  wordsFail.length = 0;
+  wordsOk.length = 0;
+  progressPanel.start(max, 'Analyzing', true);
+  await scheduler.yield();
+
+  const canvas = canvasOutputDOM;
+  const width  = canvas.width;
+  const height = canvas.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true, desynchronized: false });
+
+  for (let i=0; i<max; i++) {
+    const word = wordsArray[i];
+    await processWord(ctx, i, word, width, height);
+    if (progressPanel.setProgress(i)) {
+      updateTotals();
+      updateInterim(word);
+      await scheduler.yield();
+    }
+    if (progressPanel.aborted()) break;
+  }
+  progressPanel.done();
+  divLOAD.hidden = true;
+  pngInterim.hidden = true;
+  btnDownload.disabled = false;
+  updateTotals();
+}
+
+function saveTextToFile(txt, filename) {
+  let bb = new Blob([txt], {type: 'text/plain;charset=utf-8'});
+  let a = document.createElement('a');
+  a.download = filename;
+  a.href = window.URL.createObjectURL(bb);
+  a.target='_blank';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function doDownload() {
+  let header = `\t# Font: ${hbs.getFontFullName()} ${hbs.getFontVersion()}\r\n`;
+  header += `\t# Browser: ${navigator.appVersion}\r\n`;
+  const txt = header + wordsFail.join('\r\n');
+  saveTextToFile(txt, 'failures.wib.txt');
+}
+
+patchDragDrop(ddFiles, handleDropFiles, {multiple:true});
+const ddFilesDT = new DoubleTapDetector(ddFiles,
+  () => {
+    chooseFile(handleDropFiles, {multiple:true});
+  }
+);
+
+patchEventClick(processWordsInitial, [btnProcessWords]);
+patchEventClick(doDownload, [btnDownload]);
+
+</script>
+
+<br/>
+<p>2026-03-05 10:50</p>
+</body>
+</html>
