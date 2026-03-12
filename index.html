@@ -166,7 +166,7 @@ function chooseFile(func, options={}) {
 }
 
 function cancel(e) {e.stopPropagation();e.preventDefault();}
-function patchDragDrop(ele, foo, mulitple) {
+function patchDragDrop(ele, foo, options={}) {
   //const ele = document.getElementById(id);
   ele.addEventListener('dragover', (e) => {
     cancel(e);
@@ -184,7 +184,7 @@ function patchDragDrop(ele, foo, mulitple) {
   });
   ele.addEventListener('mousedown', (e) => {
     if (e.button === 2) {
-      chooseFile(foo, {multiple:multiple,});
+      chooseFile(foo, option);
     }
   });
 }
@@ -254,6 +254,7 @@ async function handleDropTTF(fileObject) {
   const filename = fileObject.filename;
   const buff = await file.arrayBuffer();
   hbs.setFontBlob(buff);
+  hbs.font.setScale(1000,1000);
   applyFont('TestFont', buff)
   ddFontFileName.innerText = filename;
   ddFontFileResult.innerHTML = `${hbs.getFontFullName()}<br/>${hbs.getFontVersion()}`;
@@ -490,6 +491,6 @@ patchEventClick(doDownload, [btnDownload]);
 </script>
 
 <br/>
-<p>2026-03-05 14:50</p>
+<p>2026-03-12 15:30</p>
 </body>
 </html>
