@@ -89,6 +89,7 @@ Total:  <span id='spanTotalCount'></span> <br/>
 
 <h2>Failures</h2>
 <button id='btnDownload' disabled>Download List</button>
+<button id='btnDownloadZip' disabled>Download PNGs ZIP</button>
   <div id='divFail'>
   </div>
 </div>
@@ -96,14 +97,17 @@ Total:  <span id='spanTotalCount'></span> <br/>
 <div hidden id='divWORK'>
   <h2>Canvas:</h2>
   <canvas id='canvasOutputDOM' width='600px' height='200px'></canvas>
+  <canvas id='canvasPreviewDOM' width='600px' height='300px'></canvas>
 </div>
 
 <div id='pnlPreview'>
-  <img id='pngPreview' width='600px' height='200px'></img>
+  <img id='pngPreview' width='600px' height='300px'></img>
 </div>
 
 <script type="text/javascript" src="./js/hbjs-12.3.0/hb.js"></script> <!-- Module - REQUIRED -->
 <script type="text/javascript" src="./js/hbjs.js"></script> <!-- Wrapper, can be used without -->
+<script type="text/javascript" src="./js/jszip.min.js"></script>
+<script type="text/javascript" src="./js/FileSaver.min.js"></script>
 
 <script type="text/javascript" src="./progresspanel.js"></script>
 <script type="text/javascript" src="./doubletap.js"></script>
@@ -313,16 +317,17 @@ function computeThreshold(rgb, threshold) {
   return res;
 }
 
-function preparePreview(word) {
-  const canvas = canvasOutputDOM;
+function preparePreview(word, canvas, offset) {
+  if (!canvas) canvas = canvasOutputDOM;
   const width  = canvas.width;
   const height = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true, desynchronized: false });
-  const imageData = renderWordToImageData(ctx, word, width, height, true);
+  const yOfs = offset ? -height/3 : 0;
+  const imageData = renderWordToImageData(ctx, word, width, height, {display:true, yOfs:yOfs});
 }
 
 function updateInterim(word) {
-  preparePreview(word)
+  preparePreview(word, canvasOutputDOM, false);
   pngInterim.src = canvasOutputDOM.toDataURL('image/png');
 }
 
@@ -336,8 +341,8 @@ function showPreview(index) {
   const word = wordsFail[index];
   pnlPreview.hidden = false;
   pnlPreview.style.display = 'block';
-  preparePreview(word);
-  pngPreview.src = canvasOutputDOM.toDataURL('image/png');
+  preparePreview(word, canvasPreviewDOM, true);
+  pngPreview.src = canvasPreviewDOM.toDataURL('image/png');
 }
 
 function hidePreview() {
@@ -385,9 +390,14 @@ function glyphToCanvas(ctx, r, x, y, scale=1) {
   }
 }
 
-function shapeAndRenderToCanvas(ctx, word, width, height, display) {
+function shapeAndRenderToCanvas(ctx, word, width, height, options={}) {
   let x = 100;
   let y = height * 3 / 4;
+  const {
+    display= false,
+    xOfs = 0,
+    yOfs = 0,
+  } = options;
 
   ctx.fillStyle = '#f00';
   ctx.font = '50px TestFont';
@@ -401,6 +411,8 @@ function shapeAndRenderToCanvas(ctx, word, width, height, display) {
   ctx.beginPath();
   const hbr = hbs.shape(word);
   ctx.fillStyle = '#00f';
+  x += xOfs;
+  y += yOfs;
   for (let i=0; i<hbr.length; i++) {
     const r = hbr[i];
     const xy = glyphToCanvas(ctx, r, x, y, 0.05);
@@ -409,9 +421,9 @@ function shapeAndRenderToCanvas(ctx, word, width, height, display) {
   }
 }
 
-function renderWordToImageData(ctx, word, width, height, display) {
+function renderWordToImageData(ctx, word, width, height, options={}) {
   ctx.clearRect(0, 0, width, height);
-  shapeAndRenderToCanvas(ctx, word, width, height, display);
+  shapeAndRenderToCanvas(ctx, word, width, height, options);
 }
 
 async function processWord(ctx, index, word, width, height) {
@@ -458,6 +470,7 @@ async function processWordsInitial() {
   divLOAD.hidden = true;
   pngInterim.hidden = true;
   btnDownload.disabled = false;
+  btnDownloadZip.disabled = false;
   updateTotals();
 }
 
@@ -471,10 +484,14 @@ function saveTextToFile(txt, filename) {
   URL.revokeObjectURL(a.href);
 }
 
-function doDownload() {
+function generateHeaderText() {
   let header = `\t# Font: ${hbs.getFontFullName()} ${hbs.getFontVersion()}\r\n`;
   header += `\t# Browser: ${navigator.appVersion}\r\n`;
-  const txt = header + wordsFail.join('\r\n');
+  return header;  
+}
+
+function doDownload() {
+  const txt = generateHeaderText() + wordsFail.join('\r\n');
   saveTextToFile(txt, 'failures.wib.txt');
 }
 
@@ -485,12 +502,82 @@ const ddFilesDT = new DoubleTapDetector(ddFiles,
   }
 );
 
+function sanitizeFilename(name) {
+  // 1. Remove illegal characters for Windows/macOS
+  // Windows forbids:  \ / : * ? " < > |
+  // macOS historically forbids ":" (still wise to avoid)
+  const illegal = /[\\\/:*?"<>|]/g;
+  let safe = name.replace(illegal, "_");
+
+  // 2. Remove control characters (0–31)
+  safe = safe.replace(/[\x00-\x1F\x80-\x9F]/g, "");
+
+  // 3. Trim whitespace
+  safe = safe.trim();
+
+  // 4. Windows forbids filenames ending with dot or space
+  safe = safe.replace(/[\. ]+$/, "");
+
+  // 5. Avoid reserved Windows device names
+  const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+  if (reserved.test(safe)) {
+    safe = "_" + safe;
+  }
+
+  // 6. Enforce a reasonable max length (255 is typical FS limit)
+  if (safe.length > 255) {
+    safe = safe.substring(0, 255);
+  }
+
+  // 7. Ensure non-empty
+  if (!safe) safe = "unnamed";
+
+  return safe;
+}
+
+async function doDownloadZip() {
+  const zip = new JSZip();
+  const folder = zip.folder("png");
+  let max = wordsFail.length;
+  if (max > 4000) max = 4000; // Keep the ZIP reasonably sized
+  progressPanel.start(max, 'Zipping', true);
+
+  await scheduler.yield();
+  for (let i=0; i<max; i++) {
+    const word = wordsFail[i];
+
+    preparePreview(word, canvasPreviewDOM, true);
+    const blob = await new Promise(resolve=>
+      canvasPreviewDOM.toBlob(resolve, "image/png")
+      );
+    let filename = `image_${String(i+1).padStart(4, '0')}.${word}.png`;
+    filename = sanitizeFilename(filename);
+    folder.file(filename, blob);
+
+    if (progressPanel.setProgress(i)) {
+      await scheduler.yield();
+    }
+    if (progressPanel.aborted()) break;
+  }
+
+  const infoFolder = zip.folder("data");
+  infoFolder.file(`info.txt`, generateHeaderText());
+  infoFolder.file(`fail.txt`, wordsFail.join('\r\n'));
+
+  // Generate ZIP and download
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  progressPanel.done();
+
+  saveAs(zipBlob, "failures.wib.zip");
+}
+
 patchEventClick(processWordsInitial, [btnProcessWords]);
 patchEventClick(doDownload, [btnDownload]);
+patchEventClick(doDownloadZip, [btnDownloadZip]);
 
 </script>
 
 <br/>
-<p>2026-03-12 15:30</p>
+<p>2026-03-24 14:40</p>
 </body>
 </html>

@@ -24,3 +24,11 @@ For each word:
 - The HarfBuzz shaping is pathed to the canvas in blue.
 - The canvas bitmap is read, and a threshold of red pixels are detected as a failure
 
+# Downloads
+The failed list of words can be downloaded as a UTF8 text file.
+
+Additionally, the rendering of Browser (red) vs HarfBuzz (blue) can be saved as a ZIP file.
+The image renderings are in the `png\` folder, with the image index matching the line number
+of the `data\fail.txt` file.
+
+The PNG folder is limited to the first 4000 images.
