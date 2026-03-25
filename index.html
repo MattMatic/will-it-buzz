@@ -67,7 +67,22 @@ body {
     <td><span id='ddFontFileResult'></span></td>
   </tr>
   <tr>
-    <td>3. Process</td>
+    <td valign='top'>3. Settings</td>
+    <td valign='top'>
+      Browser HTML Locale (e.g. `ur`):<br/>
+      <input type='text' id='inpLocale'/>
+    </td>
+    <td valign='top'>
+      HarfBuzz Script (e.g. `arab`):<br/>
+      <input type='text' id='inpScript'/><br/>
+      HarfBuzz Language (e.g. `URD `):<br/>
+      <input type='text' id='inpLanguage'/>
+    </td>
+    <td>
+    </td>
+  </tr>
+  <tr>
+    <td>4. Process</td>
     <td colspan=3>
       <button id='btnProcessWords' disabled>Process</button>
       <!--<button id='btnTest'>Test</button>-->
@@ -441,6 +456,9 @@ async function processWord(ctx, index, word, width, height) {
 }
 
 async function processWordsInitial() {
+  hbs.setScriptLanguage(inpScript.value, inpLanguage.value);
+  document.documentElement.setAttribute('lang', inpLocale.value);
+
   progressPanel.setInterval(50);
   btnProcessWords.disabled = true;
   divMAIN.hidden = false;
@@ -578,6 +596,6 @@ patchEventClick(doDownloadZip, [btnDownloadZip]);
 </script>
 
 <br/>
-<p>2026-03-24 14:40</p>
+<p>2026-03-25 21:10</p>
 </body>
 </html>
